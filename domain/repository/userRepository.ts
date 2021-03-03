@@ -1,6 +1,6 @@
 import { User } from "../entity/user";
-import { UserDriver } from "../driver/userDriver";
 import { UserRepository } from "../interface/repository/UserRepository";
+import { UserDriver } from "../interface/driver/UserDriver";
 
 export class UserRepositoryImpl implements UserRepository {
   private readonly userDriver: UserDriver;

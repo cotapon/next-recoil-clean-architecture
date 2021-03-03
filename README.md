@@ -1,41 +1,213 @@
-# TypeScript Next.js example
-
-This is a really simple project that shows the usage of Next.js with TypeScript.
-
-## Deploy your own
-
-Deploy the example using [Vercel](https://vercel.com?utm_source=github&utm_medium=readme&utm_campaign=next-example):
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/git/external?repository-url=https://github.com/vercel/next.js/tree/canary/examples/with-typescript&project-name=with-typescript&repository-name=with-typescript)
-
-## How to use it?
-
-Execute [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app) with [npm](https://docs.npmjs.com/cli/init) or [Yarn](https://yarnpkg.com/lang/en/docs/cli/create/) to bootstrap the example:
-
-```bash
-npx create-next-app --example with-typescript with-typescript-app
-# or
-yarn create next-app --example with-typescript with-typescript-app
-```
-
-Deploy it to the cloud with [Vercel](https://vercel.com/new?utm_source=github&utm_medium=readme&utm_campaign=next-example) ([Documentation](https://nextjs.org/docs/deployment)).
-
-## Notes
-
-This example shows how to integrate the TypeScript type system into Next.js. Since TypeScript is supported out of the box with Next.js, all we have to do is to install TypeScript.
+# Recoil + Clean Architecture ? DDD ?
 
 ```
-npm install --save-dev typescript
+domain/
+├── driver
+│   └── userDriver.ts
+├── entity
+│   └── user.ts
+├── interface
+│   ├── driver
+│   │   └── UserDriver.ts
+│   ├── repository
+│   │   └── UserRepository.ts
+│   └── usecase
+│       └── UserUseCase.ts
+├── repository
+│   └── userRepository.ts
+├── usecase
+│   ├── index.ts
+│   └── userUseCase.ts
+state/
+└── useUser.tsx    
 ```
 
-To enable TypeScript's features, we install the type declarations for React and Node.
+## Entity
+
+ドメインモデルで不変なオブジェクト
+
+```typescript
+// domain/entity/user.ts
+export class User {
+  readonly uid: string;
+
+  readonly email: string
+
+  constructor(uid: string, email: string) {
+    this.uid = uid;
+    this.email = email
+  }
+}
+```
+
+
+## UseCase
+
+ドメインモデルを使ってビジネス手順のみを記載
+
+```typescript
+// domain/interface/usecase/userUseCase.ts
+import { User } from "../../entity/user";
+
+export interface UserUseCase {
+  find(uid: string): Promise<User | null>;
+  update(uid: string, email: string): Promise<void>;
+}
+```
+
+```typescript
+// domain/usecase/userUseCase.ts
+import { User } from "../entity/user";
+import { UserRepository } from "../interface/repository/UserRepository";
+import { UserUseCase } from "../interface/usecase/UserUseCase";
+
+export class UserUseCaseImpl implements UserUseCase {
+  readonly userRepository: UserRepository;
+
+  constructor(repository: UserRepository) {
+    this.userRepository = repository;
+  }
+
+  async find(uid: string): Promise<User | null> {
+    return this.userRepository.find(uid);
+  }
+
+  async update(uid: string, email: string): Promise<void> {
+    await this.userRepository.update(uid, email);
+  }
+}
 
 ```
-npm install --save-dev @types/react @types/react-dom @types/node
+
+## Repository
+
+外部と内部をつなぐRepository層でアプリケーション固有のドメインモデルに変換する
+
+```typescript
+// domain/interface/repository/userRepository.ts
+import {User} from "../../entity/user";
+
+export interface UserRepository {
+  find(uid: string): Promise<User | null>;
+  update(uid: string, email: string): Promise<void>;
+}
 ```
 
-When we run `next dev` the next time, Next.js will start looking for any `.ts` or `.tsx` files in our project and builds it. It even automatically creates a `tsconfig.json` file for our project with the recommended settings.
+```typescript
+// domain/repository/userRepository.ts
+import { User } from "../entity/user";
+import { UserRepository } from "../interface/repository/UserRepository";
+import { UserDriver } from "../interface/driver/UserDriver";
 
-Next.js has built-in TypeScript declarations, so we'll get autocompletion for Next.js' modules straight away.
+export class UserRepositoryImpl implements UserRepository {
+  private readonly userDriver: UserDriver;
 
-A `type-check` script is also added to `package.json`, which runs TypeScript's `tsc` CLI in `noEmit` mode to run type-checking separately. You can then include this, for example, in your `test` scripts.
+  constructor(driver: UserDriver) {
+    this.userDriver = driver;
+  }
+
+  async find(uid: string): Promise<User | null> {
+    const res = await this.userDriver.find(uid);
+    return res ? new User(res.uid, res.email) : null;
+  }
+  
+  async update(uid: string, email: string): Promise<void> {
+    await this.userDriver.update(uid, email);
+  }
+}
+```
+
+## Driver
+
+外部データを取得し、内容は変えずにレスポンスそのままを返する
+
+```typescript
+// domain/interface/driver/UserDriver.ts
+export interface UserDriver {
+  find(uid: string): Promise<UserModel | null>;
+  update(uid: string, email: string): Promise<void>;
+}
+
+export type UserModel = {
+  uid: string;
+  email: string;
+};
+```
+
+```typescript
+// domain/driver/userDriver.ts
+import { UserDriver, UserModel } from "../interface/driver/UserDriver";
+
+export class UserDriverImpl implements UserDriver {
+  private readonly db;
+
+  constructor(database: any = null) {
+    this.db = database;
+  }
+
+  async find(uid: string): Promise<UserModel | null> {
+    const doc = await this.db.collection('user').doc(uid).get();
+
+    if (!doc.exists) {
+      return null;
+    }
+    return doc.data();
+  }
+  
+  async update(uid: string, email: string): Promise<void> {
+    await this.db.collection('user').doc(uid).update({ email });
+  }
+}
+```
+
+## Presenter (Recoil State)
+
+UIへ反映させるためにReact Custom Hooksを使います。Global な state を使う場合は、Recoil を Hooks 内にカプセル化することによって、
+Hooksを経由しないと状態を更新できなくし、state の安全性を担保しています。
+
+```typescript
+// domain/usecase/index.ts 
+import { UserRepositoryImpl } from "../repository/userRepository";
+import { UserDriverImpl } from "../driver/userDriver";
+import { UserUseCaseImpl } from "./userUseCase";
+
+const userRepository = new UserRepositoryImpl(new UserDriverImpl());
+
+export const userUseCase = new UserUseCaseImpl(userRepository);
+
+```
+
+```typescript
+// state/useUser.tsx
+import {
+  atom,
+  useRecoilValue,
+} from "recoil";
+import { User } from "../domain/entity/user";
+import { UserUseCase } from "../domain/interface/usecase/UserUseCase";
+
+const UserAtom = atom<User | null>({
+  key: "USER_ATOM",
+  default: null,
+});
+
+export function useUser(useCase: UserUseCase) {
+  const user = useRecoilValue(UserAtom);
+  
+  const findUser = async (uid: string): Promise<User | null> => {
+    return useCase.find(uid);
+  };
+  
+  const updateUser = async (uid: string, email: string): Promise<void> => {
+    await useCase.update(uid, email);
+  }
+  
+  return { user, findUser, updateUser };
+}
+```
+
+
+### 参考
+[https://qiita.com/ttiger55/items/50d88e9dbf3039d7ab66](https://qiita.com/ttiger55/items/50d88e9dbf3039d7ab66)
+
+[https://blog.uhy.ooo/entry/2020-05-16/recoil-first-impression/](https://blog.uhy.ooo/entry/2020-05-16/recoil-first-impression/)
