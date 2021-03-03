@@ -1,10 +1,6 @@
 import { User } from "../entity/user";
-import { UserRepository } from "../repository/userRepository";
-
-export interface UserUseCase {
-  find(uid: string): Promise<User | null>;
-  update(uid: string, email: string): Promise<void>;
-}
+import { UserRepository } from "../interface/repository/UserRepository";
+import { UserUseCase } from "../interface/usecase/UserUseCase";
 
 export class UserUseCaseImpl implements UserUseCase {
   readonly userRepository: UserRepository;

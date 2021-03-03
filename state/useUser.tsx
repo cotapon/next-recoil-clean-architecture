@@ -2,8 +2,8 @@ import {
   atom,
   useRecoilValue,
 } from "recoil";
-import { UserUseCase } from "../domain/usecase/userUseCase";
 import { User } from "../domain/entity/user";
+import { UserUseCase } from "../domain/interface/usecase/UserUseCase";
 
 const UserAtom = atom<User | null>({
   key: "USER_ATOM",

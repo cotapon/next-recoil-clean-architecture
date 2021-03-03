@@ -1,10 +1,6 @@
 import { User } from "../entity/user";
 import { UserDriver } from "../driver/userDriver";
-
-export interface UserRepository {
-  find(uid: string): Promise<User | null>;
-  update(uid: string, email: string): Promise<void>;
-}
+import { UserRepository } from "../interface/repository/UserRepository";
 
 export class UserRepositoryImpl implements UserRepository {
   private readonly userDriver: UserDriver;
